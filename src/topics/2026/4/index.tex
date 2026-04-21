@@ -50,356 +50,393 @@
 \begin{tabular}{|p{0.72\textwidth} r|}
 \hline
 \textbf{Recreational Mathematics Club} & \textit{Discussion \#4} \\[4pt]
-\multicolumn{2}{|c|}{\Large Linear Congruential Generators and Lattice Attacks} \\[4pt]
+\multicolumn{2}{|c|}{\Large 12-Eye Portal Seed and the LLL algorithm} \\[4pt]
 Speaker: \textit{Dhairya Baxi, Mahek Shamsukha} & Indian Institute of Science \\
 \hline
 \end{tabular}
 
 % ══════════════════════════════════════════════════════════════════════════════
-\section{Linear Congruential Generators}
+% LCG PART — from lcg.tex
 % ══════════════════════════════════════════════════════════════════════════════
 
-\begin{definition}
-A \emph{linear congruential generator} (LCG) with parameters $a, b, m \in \Z$
-produces a sequence via the recurrence
+\section{What is a Linear Congruential Generator?}
+
+A \textbf{Linear Congruential Generator (LCG)} is a simple pseudorandom number generator (PRNG)
+defined by the recurrence relation:
+
 \[
-  x_{i+1} \equiv a x_i + b \pmod{m}.
-\]
-Starting from a \emph{seed} $x_0$, the full sequence $x_0, x_1, x_2, \ldots$
-is determined. Each $x_i \in \{0, 1, \ldots, m-1\}$.
-\end{definition}
-
-LCGs are among the oldest and most widely used pseudorandom number generators,
-appearing in standard libraries of many programming languages.
-
-% ══════════════════════════════════════════════════════════════════════════════
-\section{Refresher: GCD and Extended GCD}
-% ══════════════════════════════════════════════════════════════════════════════
-
-\subsection{Greatest Common Divisor}
-
-The \emph{greatest common divisor} $\gcd(a,b)$ is the largest integer that
-divides both $a$ and $b$.
-
-The key identity is:
-\[
-  \gcd(a,b) = \gcd(b,\, a \bmod b).
+    \text{seed} \;:=\; (a \cdot \text{seed} + b) \mod m
 \]
 
-This leads to a simple iterative algorithm:
-
-\begin{algorithm}[H]
-\caption{\texttt{gcd(a,b)}}
-\begin{algorithmic}[1]
-    \State \textbf{Input:} Integers $a,b \geq 0$
-    \State \textbf{Output:} $\gcd(a,b)$
-    \While{$b \neq 0$}
-        \State $(a,b) \gets (b,\ a \bmod b)$
-    \EndWhile
-    \State \Return $a$
-\end{algorithmic}
-\end{algorithm}
-
-\begin{keybox}
-\textbf{Idea.}
-Each step replaces $(a,b)$ with a smaller pair having the same gcd.
-Thus the algorithm quickly converges.
-\end{keybox}
-
-\subsection{Extended GCD}
-
-Beyond computing the gcd, we often want integers $x,y$ such that
-\[
-  ax + by = \gcd(a,b).
-\]
-
-\begin{theorem}[Bézout]
-For any integers $a,b$, there exist $x,y \in \Z$ such that
-\[
-  ax + by = \gcd(a,b).
-\]
-\end{theorem}
-
-The extended Euclidean algorithm computes these coefficients.
-
-\begin{algorithm}[H]
-\caption{\texttt{extended\_gcd(a,b)}}
-\begin{algorithmic}[1]
-    \State \textbf{Input:} Integers $a,b \geq 0$
-    \State \textbf{Output:} $(g,x,y)$ such that $ax + by = g = \gcd(a,b)$
-    \If{$b = 0$}
-        \State \Return $(a,\ 1,\ 0)$
-    \EndIf
-    \State $(g,x,y) \gets \texttt{extended\_gcd}(b,\ a \bmod b)$
-    \State \Return $(g,\ y,\ x - \floor{a/b} \cdot y)$
-\end{algorithmic}
-\end{algorithm}
-
-\begin{keybox}
-\textbf{Idea.}
-We recursively reduce the problem using
-\[
-  \gcd(a,b) = \gcd(b, a \bmod b),
-\]
-and then reconstruct the coefficients $(x,y)$ on the way back.
-\end{keybox}
-
-\subsection{Complexity}
-
-Both \texttt{gcd} and \texttt{extended\_gcd} run in
-\[
-  O(\log \min(a,b))
-\]
-time.
-
-% ══════════════════════════════════════════════════════════════════════════════
-\section{Multiplicative Inverse via Extended GCD}
-% ══════════════════════════════════════════════════════════════════════════════
-
-We say $a^{-1}$ is a \emph{multiplicative inverse of $a$ modulo $m$} if
-\[
-  a \cdot a^{-1} \equiv 1 \pmod{m}.
-\]
-
-\begin{proposition}
-The inverse $a^{-1} \pmod{m}$ exists if and only if $\gcd(a, m) = 1$.
-\end{proposition}
-
-\begin{proof}
-$(\Leftarrow)$
-Suppose $\gcd(a,m) = 1$. By B\'{e}zout, there exist integers $s, t$ with
-$sa + tm = 1$. Reducing modulo $m$ gives $sa \equiv 1 \pmod{m}$,
-so $s \bmod m$ is the desired inverse.
-
-$(\Rightarrow)$
-We prove the contrapositive: if $\gcd(a,m) = d > 1$, then no inverse exists.
-Suppose for contradiction that some $u$ satisfies $au \equiv 1 \pmod{m}$,
-i.e.\ $au = 1 + qm$ for some integer $q$, or equivalently $au - qm = 1$.
-But $d \mid a$ and $d \mid m$, so $d \mid (au - qm) = 1$,
-which is impossible for $d > 1$.
-\end{proof}
-
-\begin{keybox}
-\textbf{Algorithm.}
-Run the extended Euclidean algorithm on $(a, m)$.
+where the parameters are:
 \begin{itemize}
-  \item If $\gcd(a,m) = 1$: return $s \bmod m$ as the inverse.
-  \item If $\gcd(a,m) \neq 1$: report that no inverse exists.
-\end{itemize}
-\end{keybox}
-
-% ══════════════════════════════════════════════════════════════════════════════
-\section{The \texttt{next} and \texttt{forward} Routines}
-% ══════════════════════════════════════════════════════════════════════════════
-
-\subsection{One Step Forward}
-
-\[
-  \texttt{next}(x) := ax + b \bmod m.
-\]
-
-\subsection{$n$ Steps Forward}
-
-\textbf{Naive approach:} Apply \texttt{next} repeatedly, costing $O(n)$ time.
-
-\textbf{Efficient closed form.} Unrolling the recurrence gives:
-\[
-  \texttt{forward}(x, n) := a^n x + b \cdot \frac{a^n - 1}{a - 1} \pmod{m}
-  \quad (a \neq 1).
-\]
-
-For $a = 1$ the generator is simply $x_n = x_0 + nb \bmod m$.
-
-\begin{keybox}
-\textbf{Efficiency.}
-Both $a^n \bmod m$ and $(a^n - 1)(a-1)^{-1} \bmod m$ can be computed
-in $O(\log n)$ time via fast modular exponentiation and the extended GCD
-algorithm. Thus \texttt{forward} runs in $O(\log n)$ time regardless of $n$.
-\end{keybox}
-
-% ══════════════════════════════════════════════════════════════════════════════
-\section{The \texttt{prev} and \texttt{backward} Routines}
-% ══════════════════════════════════════════════════════════════════════════════
-
-\subsection{One Step Backward}
-
-Provided $\gcd(a, m) = 1$ so that $a^{-1}$ exists:
-\[
-  \texttt{prev}(x) := a^{-1} x - a^{-1} b \pmod{m}
-  = a^{-1}(x - b) \pmod{m}.
-\]
-
-\subsection{$n$ Steps Backward}
-
-\[
-  \texttt{backward}(x, n) := \texttt{prev}^n(x).
-\]
-
-\begin{keybox}
-\textbf{Efficient computation.}
-By an identical argument to \texttt{forward}, \texttt{backward}$(x, n)$
-admits a closed form with $a^{-n} \bmod m$, computable in $O(\log n)$ time.
-Explicitly:
-\[
-  \texttt{backward}(x, n) = (a^{-1})^n x + b \cdot \frac{(a^{-1})^n - 1}{a^{-1} - 1} \pmod m.
-\]
-\end{keybox}
-
-% ══════════════════════════════════════════════════════════════════════════════
-\section{Problem Formulation}
-% ══════════════════════════════════════════════════════════════════════════════
-
-Fix parameters:
-\begin{itemize}
-  \item $n \geq 0$: the index of the first constrained output,
-  \item $k \geq 1$: number of constrained outputs,
-  \item $m_i, M_i \in [0, m)$ for $i \in [k]$: desired bounds on each output.
+    \item $m > 0$ --- the \textbf{modulus}
+    \item $a$ --- the \textbf{multiplier}, with $0 < a < m$
+    \item $b$ --- the \textbf{increment}, with $0 \leq b < m$
+    \item $\text{seed}$ --- the current \textbf{state}, initialised to some value $\text{seed}_0 \in [0, m)$
 \end{itemize}
 
-\begin{keybox}
-\textbf{Problem.}
-Find a seed $x_1 \in \{0, \ldots, m-1\}$ such that, with $x_{i+1} = \texttt{next}(x_i)$,
+Each call to the generator updates the seed and outputs it (or some function of it) as the next
+pseudorandom value. The entire future sequence is thus fully determined by the initial seed and
+the triple $(a, b, m)$.
+
+\section{Primer: The Extended Euclidean Algorithm}
+
+The \textbf{Euclidean algorithm} computes $\gcd(a, b)$ by repeatedly applying the identity
+$\gcd(a, b) = \gcd(b,\, a \bmod b)$ until the remainder is zero:
+
+\begin{verbatim}
+def gcd(a, b):
+    while b != 0:
+        a, b = b, a % b
+    return a
+\end{verbatim}
+
+The \textbf{Extended Euclidean Algorithm} does the same computation but additionally tracks
+integer coefficients $x, y$ satisfying \textbf{Bezout's identity}:
 \[
-  x_{n+i} \in [m_i,\, M_i] \quad \text{for all } i \in [k].
+    \gcd(a, b) = a \cdot x + b \cdot y
 \]
-\end{keybox}
+It maintains this identity as an invariant at every recursive call, back-substituting
+coefficients on the way back up:
 
-% ══════════════════════════════════════════════════════════════════════════════
-\section{Reduction to an Integer Linear Program}
-% ══════════════════════════════════════════════════════════════════════════════
+\begin{verbatim}
+def extended_gcd(a, b):
+    if b == 0:
+        return a, 1, 0      # gcd=a, since a*1 + 0*0 = a
+    g, x, y = extended_gcd(b, a % b)
+    return g, y, x - (a // b) * y
+\end{verbatim}
 
-\subsection{Reduction to $n = 0$}
-
-The constraint window starts at $x_{n+1}$. Using \texttt{forward}, the constrained
-outputs are $x_{n+1}, x_{n+2}, \ldots, x_{n+k}$. Relabelling: set $y_1 = x_{n+1}$
-and note that $y_1 = \texttt{forward}(x_1, n)$. Since \texttt{forward} and
-\texttt{backward} are invertible (when $\gcd(a,m)=1$), finding a valid $x_1$
-is equivalent to finding a valid $y_1$. We henceforth seek $y_1$ such that
-\[
-  y_{i} \in [m_i,\, M_i] \quad \text{for } i = 1, \ldots, k,
-\]
-where $y_{i+1} = \texttt{next}(y_i)$
-
-\subsection{Variables}
-
-Define:
+\noindent The function returns the triple $(g, x, y)$ where:
 \begin{itemize}
-  \item $y_1 \in \{0,\ldots,m-1\}$: the unknown seed (after shifting by $n$),
-  \item $s_i \in \Z$ for $i = 2, \ldots, k$: the integer such that
-        $y_i + m s_i \in [0, m)$, i.e.\ the \emph{modular correction} ensuring
-        $y_i$ is the true LCG output.
+    \item $g = \gcd(a, b)$ --- the greatest common divisor
+    \item $x, y \in \mathbb{Z}$ --- the Bezout coefficients satisfying $ax + by = g$
 \end{itemize}
 
-Concretely, removing the modulus from $y_{i+1} = a y_i + b \bmod m$ gives the
-exact equation
-\[
-  y_{i+1} = a y_i + b - m s_{i+1},
-\]
-where $s_{i+1}$ is the quotient $\lfloor (a y_i + b)/m \rfloor$. These $s_i$
-are not free: they are determined by $y_1$, but since they are integers they
-serve as auxiliary integer variables in the ILP.
+When $\gcd(a, m) = 1$, the identity becomes $ax + my = 1$, which taken mod $m$ gives
+$ax \equiv 1 \pmod{m}$. The coefficient $x$ returned by \texttt{extended\_gcd(a, m)} is
+therefore exactly the modular inverse $a^{-1} \bmod m$.
 
-\subsection{Matrix Form}
+\section{Primer: Modular Inverses}
 
-Write $z = (y_1,\, s_2,\, s_3,\, \ldots,\, s_k)^\top \in \Z^k$. Unrolling
-the recurrence, each constrained output $y_i$ is an affine function of $z$:
+The \textbf{modular inverse} of an integer $a$ modulo $m$ is the integer $a^{-1}$ such that:
 \[
-  \begin{pmatrix} y_2 \\ y_3 \\ \vdots \\ y_{k+1} \end{pmatrix}
-  = A z + \mathbf{b},
+    a \cdot a^{-1} \equiv 1 \pmod{m}
 \]
-for an explicit integer matrix $A$ and constant vector $\mathbf{b}$ depending
-on $a, b, m$. The constraints $y_{1+i} \in [m_i, M_i]$ then read:
-\[
-  \mathbf{m} \leq A z + \mathbf{b} \leq \mathbf{M},
-\]
-where $\mathbf{m} = (m_1, \ldots, m_k)^\top$ and $\mathbf{M} = (M_1, \ldots, M_k)^\top$.
+It exists if and only if $\gcd(a, m) = 1$. When it does, it can be computed efficiently in
+$O(\log m)$ using the \textbf{Extended Euclidean Algorithm}:
 
-\subsection{Normalising the Bounds}
+\begin{verbatim}
+def mod_inverse(a, m):
+    g, x, _ = extended_gcd(a, m)
+    if g != 1:
+        raise ValueError("Inverse does not exist")
+    return x % m
+\end{verbatim}
 
-Subtracting $\mathbf{b}$ from all sides:
+Modular inverses let us ``divide'' in modular arithmetic --- instead of computing $x / a \mod m$,
+we compute $x \cdot a^{-1} \mod m$.
+
+\section{Next and Forward Routines}
+
+We define two fundamental operations on an LCG state.
+
+\subsection*{Primitive: \texttt{next}}
+
+\texttt{next}$(x)$ applies one step of the recurrence:
 \[
-  \mathbf{m} - \mathbf{b} \leq Az \leq \mathbf{M} - \mathbf{b}.
-\]
-The entries of $\mathbf{m} - \mathbf{b}$ and $\mathbf{M} - \mathbf{b}$ may
-lie outside $[0,m)$. We bring them inside $[0,m)$ by adding appropriate
-multiples of $m$ to each component. Adding $c_i \cdot m$ to the $i$-th
-component of both sides is equivalent to adding $c_i \cdot m$ times the
-$i$-th row of $A^{-1}$ to $z$, which can be absorbed into a change of
-basis for $A$ — i.e.\ it corresponds to modifying the entries of $A$.
-After this adjustment, define
-\[
-  \bar{\mathbf{m}} = \mathbf{m} - \mathbf{b} + C\mathbf{m}_{\text{shift}},
-  \qquad
-  \bar{\mathbf{M}} = \mathbf{M} - \mathbf{b} + C\mathbf{m}_{\text{shift}},
-\]
-and a modified matrix $\bar{A}$, so that the system becomes
-\[
-  \bar{\mathbf{m}} \leq \bar{A} z \leq \bar{\mathbf{M}},
-  \quad \bar{\mathbf{m}},\, \bar{\mathbf{M}} \in [0,m)^k.
+    \texttt{next}(x) = (a \cdot x + b) \mod m
 \]
 
-\begin{keybox}
-\textbf{Summary.}
-The LCG constraint problem reduces to finding an integer vector
-$z = (y_1, s_2, \ldots, s_k)^\top \in \Z^k$ satisfying
-$\bar{\mathbf{m}} \leq \bar{A} z \leq \bar{\mathbf{M}}$,
-with all bounds in $[0,m)^k$.
-This is an \emph{integer linear program} (ILP).
-\end{keybox}
+\subsection*{Naive \texttt{forward}}
 
-% ══════════════════════════════════════════════════════════════════════════════
-\section{Geometric and Lattice Interpretation}
-% ══════════════════════════════════════════════════════════════════════════════
+\texttt{forward}$(x, n)$ applies \texttt{next} $n$ times iteratively:
 
-\subsection{Lattice Points in a Box}
+\begin{verbatim}
+def forward(x, n):
+    for _ in range(n):
+        x = (a * x + b) % m
+    return x
+\end{verbatim}
 
-The image of $\Z^k$ under $\bar{A}$ is the \emph{lattice}
-$\mathcal{L}(\bar{A}) = \{ \bar{A} z : z \in \Z^k \}$.
-Our problem asks: does $\mathcal{L}(\bar{A})$ contain any point inside
-the axis-aligned box $[\bar{\mathbf{m}},\, \bar{\mathbf{M}}] \subset [0,m)^k$?
+This runs in $O(n)$ time, which is impractical for large $n$.
 
-\subsection{Transforming to Integer Space}
+\subsection*{Closed Form}
 
-Assuming $\bar{A}$ is square and invertible, applying $\bar{A}^{-1}$ to
-the inequality $\bar{\mathbf{m}} \leq \bar{A} z \leq \bar{\mathbf{M}}$
-transforms the problem: we need an integer point $z \in \Z^k$ lying inside
-the \emph{parallelogram}
+Unrolling the recurrence $n$ times gives:
 \[
-  P = \bar{A}^{-1}[\bar{\mathbf{m}},\, \bar{\mathbf{M}}]
-  = \{ z \in \R^k : \bar{\mathbf{m}} \leq \bar{A} z \leq \bar{\mathbf{M}} \}.
+    \texttt{forward}(x, n)
+    = a\bigl(a(\ldots(a \cdot x + b)\ldots) + b\bigr) + b \mod m
+    = a^n x + b\sum_{i=0}^{n-1} a^i \mod m
 \]
 
-\begin{keybox}
-\textbf{Geometric reformulation.}
-The axis-aligned box $[\bar{\mathbf{m}}, \bar{\mathbf{M}}]$ in output space
-becomes a skewed parallelogram $P$ in the integer variable space of $z$.
-The columns of $\bar{A}^{-1}$ determine how the coordinate axes are sheared.
-We seek any $z \in \Z^k \cap P$.
-\end{keybox}
+Applying the geometric series formula (for $a \neq 1$):
+\[
+    \texttt{forward}(x, n) = a^n\, x + b\!\left(\frac{a^n - 1}{a - 1}\right) \mod m
+\]
 
-% ══════════════════════════════════════════════════════════════════════════════
+This reduces the problem to computing $a^n \mod m$, which can be done in $O(\log n)$ via
+fast modular exponentiation.
+
+\subsection*{Efficient \texttt{forward} in $O(\log n)$}
+
+\begin{verbatim}
+def forward(x, n):
+    an = pow(a, n, m)                     # a^n mod m  in O(log n)
+    if a == 1:
+        return (x + b * n) % m
+    inv_a1 = mod_inverse(a - 1, m)        # (a-1)^{-1} mod m
+    return (an * x + b * (an - 1) * inv_a1) % m
+\end{verbatim}
+
+\noindent The modular inverse of $(a-1)$ exists whenever $\gcd(a-1,\, m) = 1$, which holds for
+typical LCG parameters.
+
+\section{Prev and Backward Routines}
+
+\subsection*{Primitive: \texttt{prev}}
+
+Just as \texttt{next} applies the recurrence forward, \texttt{prev}$(x)$ inverts it --- recovering
+the state that would have produced $x$. Starting from:
+\[
+    x = (a \cdot x_{\text{prev}} + b) \mod m
+\]
+we solve for $x_{\text{prev}}$:
+\[
+    x_{\text{prev}} = a^{-1}(x - b) \mod m
+\]
+where $a^{-1}$ is the modular inverse of $a$ modulo $m$ (which exists when $\gcd(a, m) = 1$).
+In code:
+
+\begin{verbatim}
+def prev(x):
+    inv_a = mod_inverse(a, m)
+    return (inv_a * (x - b)) % m
+\end{verbatim}
+
+\subsection*{\texttt{backward}}
+
+\texttt{backward}$(x, n)$ applies \texttt{prev} $n$ times, stepping the generator $n$ steps into
+the past. The naive implementation runs in $O(n)$:
+
+\begin{verbatim}
+def backward(x, n):
+    for _ in range(n):
+        x = prev(x)
+    return x
+\end{verbatim}
+
+\noindent Note that \texttt{backward}$(x, n)$ is equivalent to \texttt{forward}$(x, -n)$, so an
+efficient $O(\log n)$ version follows from the same closed form as before --- substituting $a^{-1}$
+and $-b \cdot a^{-1}$ as the new multiplier and increment respectively.
+
+\section{The Seed-Finding Problem}
+
+The general problem is to find an initial seed whose LCG outputs fall within prescribed intervals
+over several consecutive steps. For a concrete application of this framework to finding
+Minecraft world seeds with fully-filled stronghold portals, see Appendix~\ref{app:minecraft}.
+
+\subsection*{General Problem Formulation}
+
+More generally, the problem we study is:
+
+\begin{quote}
+    \textit{Given bounds $m_1, M_1, \ldots, m_k, M_k$ and an offset $n$, find an initial seed
+    $\text{seed}_0$ such that for each $i \in \{1, \ldots, k\}$:}
+    \[
+        m_i \;\leq\; \text{seed}_{n+i} \;\leq\; M_i
+    \]
+\end{quote}
+
+That is, we want $k$ consecutive outputs of the LCG, starting from step $n$, to each fall within
+a prescribed interval. The challenge is to search over the space of possible seeds $\text{seed}_0
+\in [0, m)$ efficiently --- brute force is infeasible when $m$ is large (e.g.\ $m = 2^{48}$ in
+Java's \texttt{Random}).
+
+\subsection*{Reducing to Constraints on $\text{seed}_0$}
+
+Using the closed form for \texttt{forward}, every constraint on $\text{seed}_{n+i}$ can be written
+directly in terms of $\text{seed}_0$. Crucially, the offset $n$ is handled for free: given any
+candidate $\text{seed}_n$, we can recover $\text{seed}_0 = \texttt{backward}(\text{seed}_n, n)$
+in $O(\log n)$, or equivalently jump ahead with $\texttt{forward}(\text{seed}_0, n)$. This means
+we can freely translate between constraints on $\text{seed}_0$ and constraints on any other step.
+
+Expressing $\text{seed}_{n+i} = \texttt{forward}(\text{seed}_0,\, n+i)$ via the closed form,
+the system of $k$ constraints becomes (shown here for $n = 0$, $k = 12$):
+
+\[
+\min_0 \;\leq\; \left\lfloor a^0\,\text{seed}_0 + b\!\left(\frac{a^0 - 1}{a-1}\right) \right\rfloor \bmod m \;\leq\; \max_0
+\]
+\[
+\min_1 \;\leq\; \left\lfloor a^1\,\text{seed}_0 + b\!\left(\frac{a^1 - 1}{a-1}\right) \right\rfloor \bmod m \;\leq\; \max_1
+\]
+\[
+\vdots
+\]
+\[
+\min_{11} \;\leq\; \left\lfloor a^{11}\,\text{seed}_0 + b\!\left(\frac{a^{11} - 1}{a-1}\right) \right\rfloor \bmod m \;\leq\; \max_{11}
+\]
+
+Each constraint is a modular interval condition on $\text{seed}_0$. The problem reduces to finding
+all $\text{seed}_0 \in [0, m)$ satisfying all $k$ such constraints simultaneously.
+
+\subsection*{Removing the Modulus}
+
+The modular reduction is the main obstacle to solving the system directly. We eliminate it by
+observing that $x \bmod m = x - km$ for some integer $k \geq 0$. That is, for each constraint $i$
+there exists an unknown integer $k_i$ such that:
+\[
+    a^i\,\text{seed}_0 + b\!\left(\frac{a^i-1}{a-1}\right) - k_i m
+\]
+is the true (non-reduced) value. Substituting this into the bounds and rearranging --- moving the
+$b(\cdots)$ term to both sides --- each modular inequality becomes an ordinary linear inequality:
+
+\[
+\min_0 - b\!\left(\frac{a^0-1}{a-1}\right) \;\leq\; a^0\,\text{seed}_0 + k_0\, m \;\leq\; \max_0 - b\!\left(\frac{a^0-1}{a-1}\right)
+\]
+\[
+\min_1 - b\!\left(\frac{a^1-1}{a-1}\right) \;\leq\; a^1\,\text{seed}_0 + k_1\, m \;\leq\; \max_1 - b\!\left(\frac{a^1-1}{a-1}\right)
+\]
+\[
+\vdots
+\]
+\[
+\min_{11} - b\!\left(\frac{a^{11}-1}{a-1}\right) \;\leq\; a^{11}\,\text{seed}_0 + k_{11}\, m \;\leq\; \max_{11} - b\!\left(\frac{a^{11}-1}{a-1}\right)
+\]
+
+The system now has $k+1$ unknowns ($\text{seed}_0$ and the integers $k_0, \ldots, k_{k-1}$) and
+$2k$ linear inequalities over the integers. No modular arithmetic remains --- the problem has
+been lifted to an integer linear feasibility problem.
+
+\subsection*{Matrix Formulation}
+
+We can write the system compactly by collecting the unknowns into a vector
+$\hat{x} = (\text{seed}_0,\, k_0,\, k_1,\, \ldots,\, k_{n-1})^\top$ and defining:
+
+\[
+A = \begin{bmatrix}
+1      & 0 & 0 & \cdots & 0 \\
+a^{\alpha_1} & m & 0 & \cdots & 0 \\
+a^{\alpha_2} & 0 & m & \cdots & 0 \\
+\vdots & \vdots & \vdots & \ddots & \vdots \\
+a^{\alpha_{n-1}} & 0 & 0 & \cdots & m
+\end{bmatrix},
+\qquad
+\hat{b} = \begin{bmatrix}
+0 \\
+b\!\left(\dfrac{a^{\alpha_1}-1}{a-1}\right) \\[6pt]
+b\!\left(\dfrac{a^{\alpha_2}-1}{a-1}\right) \\
+\vdots \\
+b\!\left(\dfrac{a^{\alpha_{n-1}}-1}{a-1}\right)
+\end{bmatrix},
+\]
+
+\[
+\widehat{\min} = \begin{bmatrix} \min_0 \\ \min_1 \\ \vdots \\ \min_{n-1} \end{bmatrix},
+\qquad
+\widehat{\max} = \begin{bmatrix} \max_0 \\ \max_1 \\ \vdots \\ \max_{n-1} \end{bmatrix}.
+\]
+
+The entire seed-finding problem then reduces to finding an integer vector $\hat{x}$ such that:
+\[
+    \widehat{\min} \;\leq\; A\hat{x} + \hat{b} \;\leq\; \widehat{\max}
+\]
+subject to $0 \leq x_1 = \text{seed}_0 < m$. Crucially, the possible values of
+$A\hat{x} + \hat{b} \bmod m$ are exactly the possible tuples of consecutive LCG seeds ---
+so any solution $\hat{x}$ directly yields a valid initial seed.
+
+\subsection*{Geometric Interpretation: A Lattice Problem}
+
+The columns of $A$ generate a \textbf{lattice} --- the set of all integer linear combinations
+$A\hat{x}$ for $\hat{x} \in \mathbb{Z}^n$. The constraint $\widehat{\min} \leq A\hat{x} + \hat{b} \leq \widehat{\max}$
+asks for lattice points that land inside the axis-aligned box
+$[\widehat{\min},\, \widehat{\max}]$ after the shift by $\hat{b}$.
+
+Equivalently, applying $A^{-1}$ to both sides transforms the axis-aligned box into a
+(potentially skewed) parallelogram in the space of integer vectors $\hat{x}$, and we seek
+all integer points inside that parallelogram. This is illustrated below:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{img/topics/2026/4/geom.png}
+    \caption{\textit{Left:} the lattice spanned by columns $a_0, a_1$ of $A$, with the target box (grey) and
+lattice points inside it (green). \textit{Right:} after applying $A^{-1}$, the lattice becomes
+$\mathbb{Z}^n$ and the box becomes a skewed parallelogram --- we now seek integer points inside it.}
+    \label{fig:placeholder}
+\end{figure}
+This reframing connects the seed-finding problem to classical problems in the geometry of numbers,
+and motivates the use of lattice reduction algorithms such as LLL to efficiently enumerate
+solutions.
+
 \section{Branch and Bound}
+
+Having reduced the problem to finding integer vectors $\hat{x}$ satisfying
+$\widehat{\min} \leq A\hat{x} + \hat{b} \leq \widehat{\max}$,
+we now describe how to enumerate all such solutions via \textbf{branch and bound}.
+
+\subsection*{The Linear Programme}
+
+Because $A$ is lower triangular, the system $\widehat{\min} \leq A\hat{x} + \hat{b} \leq \widehat{\max}$
+can be solved one variable at a time from the bottom row upward. Suppose components
+$x_{i+1}, \ldots, x_{n-1}$ have already been fixed. Row $i$ of the system reads:
+\[
+    \widehat{\min}_i \;\leq\; A_{ii}\, x_i + \underbrace{\sum_{j>i} A_{ij}\, x_j + \hat{b}_i}_{\text{known}} \;\leq\; \widehat{\max}_i
+\]
+Isolating $x_i$ gives the real interval:
+\[
+    l_i \;=\; \frac{\widehat{\min}_i - \hat{b}_i - \sum_{j>i} A_{ij}\,x_j}{A_{ii}}, \qquad
+    u_i \;=\; \frac{\widehat{\max}_i - \hat{b}_i - \sum_{j>i} A_{ij}\,x_j}{A_{ii}}
+\]
+Since $x_i$ must be an integer, the feasible values are
+$x_i \in \{\lceil l_i \rceil, \ldots, \lfloor u_i \rfloor\}$.
+If $\lceil l_i \rceil > \lfloor u_i \rfloor$, the partial assignment is infeasible and
+the branch is immediately pruned.
+
+\subsection*{The Subroutine}
+
+The algorithm recurses from the last variable to the first, branching over all integer values
+in the feasible interval at each level:
+
+\begin{verbatim}
+def branch_and_bound(A, b_hat, lo, hi, x, i):
+    """
+    A, b_hat : system matrix and offset
+    lo, hi   : vectors of bounds (min_hat, max_hat)
+    x        : partial solution (components i+1..n already fixed)
+    i        : current variable index (counting down from n-1 to 0)
+    """
+    if i < 0:
+        yield x[:]          # full solution found
+        return
+
+    # Compute the real interval for x[i] given fixed components
+    fixed = sum(A[i][j] * x[j] for j in range(i+1, len(x)))
+    l = (lo[i] - b_hat[i] - fixed) / A[i][i]
+    u = (hi[i] - b_hat[i] - fixed) / A[i][i]
+
+    lo_int, hi_int = ceil(l), floor(u)
+    if lo_int > hi_int:
+        return              # prune: no valid integer exists
+
+    for val in range(lo_int, hi_int + 1):
+        x[i] = val
+        yield from branch_and_bound(A, b_hat, lo, hi, x, i - 1)
+\end{verbatim}
+
+The outermost call is \texttt{branch\_and\_bound(A, b\_hat, min\_hat, max\_hat, x, n-1)}.
+Each leaf that reaches $i < 0$ yields a valid $\hat{x}$, from which $\text{seed}_0 = x_0$ is
+read off directly.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\linewidth]{img/topics/2026/4/bb.png}
+\end{figure}
+The worst-case complexity is exponential in the number of solutions, but pruning makes it
+efficient in practice when the feasible parallelogram is small --- which is precisely what LLL
+achieves by reducing the basis before running this search.
+
 % ══════════════════════════════════════════════════════════════════════════════
-
-A classical approach to ILPs is \emph{branch and bound}:
-
-\begin{enumerate}
-  \item \textbf{Relax} integrality: solve the LP relaxation over $\R^{k+1}$.
-  \item If the solution is integral, we are done.
-  \item Otherwise, pick a fractional variable $y_j \notin \Z$ and
-        \textbf{branch}: create two subproblems with $y_j \leq \lfloor y_j^* \rfloor$
-        and $y_j \geq \lceil y_j^* \rceil$ respectively.
-  \item \textbf{Bound}: prune subproblems whose LP relaxation is infeasible
-        or worse than the best solution found.
-\end{enumerate}
-
-\begin{keybox}
-\textbf{Geometric issue.}
-The efficiency of branch and bound depends critically on the shape of $P$.
-If the parallelogram is highly \emph{skewed} — i.e., elongated along
-directions misaligned with the integer lattice — the search tree becomes
-exponentially large and the method is slow.
-\end{keybox}
+% LLL PART — from index.tex
+% ══════════════════════════════════════════════════════════════════════════════
 
 % ══════════════════════════════════════════════════════════════════════════════
 \section{Basis Choice and Lattice Reduction}
@@ -692,6 +729,7 @@ Therefore, the algorithm terminates.
 \medskip
 Combining the above, a $\delta$-LLL reduced basis $B'$ exists.
 \end{proof}
+
 % ══════════════════════════════════════════════════════════════════════════════
 \section*{References}
 % ══════════════════════════════════════════════════════════════════════════════
@@ -713,6 +751,7 @@ Combining the above, a $\delta$-LLL reduced basis $B'$ exists.
 % ══════════════════════════════════════════════════════════════════════════════
 \appendix
 \section{Appendix: Minecraft 12-Eyed Seed}
+\label{app:minecraft}
 % ══════════════════════════════════════════════════════════════════════════════
 
 In \emph{Minecraft}, an End Portal consists of 12 slots, each of which
@@ -767,4 +806,11 @@ This is an instance of the LCG constraint problem with:
 Thus, finding a 12-eyed seed reduces to finding integer points satisfying
 linear constraints derived from an LCG --- precisely the type of problem
 we studied using lattice methods and the LLL algorithm.
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{img/topics/2026/4/image.png}
+\end{figure}
+
 \end{document}
