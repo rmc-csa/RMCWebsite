@@ -81,6 +81,7 @@ $(IMG_STAMP):
 	@echo "[SYNC] images"
 	@mkdir -p $(SITEDIR)/img
 	@rsync -a --delete $(SRCDIR)/img/ $(SITEDIR)/img/
+	@find $(SITEDIR)/img -type f -exec ebb -x "{}" +
 	@touch $@
 
 # ── Main page — HTML ───────────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ $(MAIN_HTML_STAMP): $(SRCDIR)/index.tex $(wildcard $(SRCDIR)/img/*) $(IMG_STAMP)
 	@mkdir -p $(BUILDDIR)/main $(SITEDIR)
 	@# Copy source + common images into build scratch
 	@cp $(SRCDIR)/index.tex $(BUILDDIR)/main/
-	@rm -rf $(BUILDDIR)/main/img && cp -r $(SRCDIR)/img $(BUILDDIR)/main/img
+	@ln -sfn $(abspath $(SITEDIR)/img) $(BUILDDIR)/main/img
 	@cd $(BUILDDIR)/main && \
 		$(MAKE4HT) -f html5 index.tex 2>&1 | tail -5
 	@# Install into site
@@ -104,7 +105,7 @@ $(MAIN_PDF_STAMP): $(SRCDIR)/index.tex $(wildcard $(SRCDIR)/img/*) $(IMG_STAMP)
 	@echo "[PDF]  main"
 	@mkdir -p $(BUILDDIR)/main $(SITEDIR)
 	@cp $(SRCDIR)/index.tex $(BUILDDIR)/main/
-	@rm -rf $(BUILDDIR)/main/img && cp -r $(SRCDIR)/img $(BUILDDIR)/main/img
+	@rm -rf $(BUILDDIR)/main/img && cp -r $(SITEDIR)/img $(BUILDDIR)/main/img
 	@cd $(BUILDDIR)/main && \
 		$(LATEXMK) index.tex 2>&1 | tail -5
 	@cp $(BUILDDIR)/main/index.pdf $(SITEDIR)/
@@ -124,7 +125,7 @@ $(BUILDDIR)/topics/%/html.stamp: \
 	@# can resolve both common (img/logo.png) and topic-specific paths
 	@# (img/topics/2026/1/foo.png) without changing the .tex source.
 	@rm -f $(BUILDDIR)/topics/$*/img
-	@ln -sfn $(abspath $(SRCDIR)/img) $(BUILDDIR)/topics/$*/img
+	@ln -sfn $(abspath $(SITEDIR)/img) $(BUILDDIR)/topics/$*/img
 	@cd $(BUILDDIR)/topics/$* && \
 		$(MAKE4HT) -f html5 index.tex 2>&1 | tail -5
 	@# Install HTML + CSS into site
@@ -134,7 +135,7 @@ $(BUILDDIR)/topics/%/html.stamp: \
 	@find $(BUILDDIR)/topics/$* -maxdepth 1 -name '*.svg' \
 		-exec cp {} $(SITEDIR)/topics/$*/ \;
 	@# Symlink img inside the site topic dir for HTML <img> tags
-	@ln -sfn $(abspath $(SRCDIR)/img) $(SITEDIR)/topics/$*/img
+	@ln -sfn $(abspath $(SITEDIR)/img) $(SITEDIR)/topics/$*/img
 	$(call PATCH_HTML,$(SITEDIR)/topics/$*)
 	@touch $@
 
@@ -148,7 +149,7 @@ $(BUILDDIR)/topics/%/pdf.stamp: \
 	@mkdir -p $(BUILDDIR)/topics/$* $(SITEDIR)/topics/$*
 	@cp $(SRCDIR)/topics/$*/index.tex $(BUILDDIR)/topics/$*/
 	@rm -f $(BUILDDIR)/topics/$*/img
-	@ln -sfn $(abspath $(SRCDIR)/img) $(BUILDDIR)/topics/$*/img
+	@ln -sfn $(abspath $(SITEDIR)/img) $(BUILDDIR)/topics/$*/img
 	@cd $(BUILDDIR)/topics/$* && \
 		$(LATEXMK) index.tex 2>&1 | tail -5
 	@cp $(BUILDDIR)/topics/$*/index.pdf $(SITEDIR)/topics/$*/
