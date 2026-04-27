@@ -1,0 +1,816 @@
+\documentclass[11pt]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage{amsmath, amsthm, amssymb}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{mdframed}
+\usepackage{float}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{algpseudocode}
+
+\geometry{margin=1in}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60!black}
+
+% ── Theorem Environments ──────────────────────────────────────────────────────
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+% ── Macros ────────────────────────────────────────────────────────────────────
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\floor}[1]{\left\lfloor #1 \right\rfloor}
+
+
+% ── Highlight box ─────────────────────────────────────────────────────────────
+\newmdenv[
+  backgroundcolor=blue!5,
+  linecolor=blue!40,
+  linewidth=1.2pt,
+  roundcorner=4pt,
+  skipabove=8pt,
+  skipbelow=8pt
+]{keybox}
+
+\begin{document}
+
+\noindent
+\begin{tabular}{|p{0.72\textwidth} r|}
+\hline
+\textbf{Recreational Mathematics Club} & \textit{Discussion \#4} \\[4pt]
+\multicolumn{2}{|c|}{\Large 12-Eye Portal Seed and the LLL algorithm} \\[4pt]
+Speaker: \textit{Dhairya Baxi, Mahek Shamsukha} & Indian Institute of Science \\
+\hline
+\end{tabular}
+
+% ══════════════════════════════════════════════════════════════════════════════
+% LCG PART — from lcg.tex
+% ══════════════════════════════════════════════════════════════════════════════
+
+\section{What is a Linear Congruential Generator?}
+
+A \textbf{Linear Congruential Generator (LCG)} is a simple pseudorandom number generator (PRNG)
+defined by the recurrence relation:
+
+\[
+    \text{seed} \;:=\; (a \cdot \text{seed} + b) \mod m
+\]
+
+where the parameters are:
+\begin{itemize}
+    \item $m > 0$ --- the \textbf{modulus}
+    \item $a$ --- the \textbf{multiplier}, with $0 < a < m$
+    \item $b$ --- the \textbf{increment}, with $0 \leq b < m$
+    \item $\text{seed}$ --- the current \textbf{state}, initialised to some value $\text{seed}_0 \in [0, m)$
+\end{itemize}
+
+Each call to the generator updates the seed and outputs it (or some function of it) as the next
+pseudorandom value. The entire future sequence is thus fully determined by the initial seed and
+the triple $(a, b, m)$.
+
+\section{Primer: The Extended Euclidean Algorithm}
+
+The \textbf{Euclidean algorithm} computes $\gcd(a, b)$ by repeatedly applying the identity
+$\gcd(a, b) = \gcd(b,\, a \bmod b)$ until the remainder is zero:
+
+\begin{verbatim}
+def gcd(a, b):
+    while b != 0:
+        a, b = b, a % b
+    return a
+\end{verbatim}
+
+The \textbf{Extended Euclidean Algorithm} does the same computation but additionally tracks
+integer coefficients $x, y$ satisfying \textbf{Bezout's identity}:
+\[
+    \gcd(a, b) = a \cdot x + b \cdot y
+\]
+It maintains this identity as an invariant at every recursive call, back-substituting
+coefficients on the way back up:
+
+\begin{verbatim}
+def extended_gcd(a, b):
+    if b == 0:
+        return a, 1, 0      # gcd=a, since a*1 + 0*0 = a
+    g, x, y = extended_gcd(b, a % b)
+    return g, y, x - (a // b) * y
+\end{verbatim}
+
+\noindent The function returns the triple $(g, x, y)$ where:
+\begin{itemize}
+    \item $g = \gcd(a, b)$ --- the greatest common divisor
+    \item $x, y \in \mathbb{Z}$ --- the Bezout coefficients satisfying $ax + by = g$
+\end{itemize}
+
+When $\gcd(a, m) = 1$, the identity becomes $ax + my = 1$, which taken mod $m$ gives
+$ax \equiv 1 \pmod{m}$. The coefficient $x$ returned by \texttt{extended\_gcd(a, m)} is
+therefore exactly the modular inverse $a^{-1} \bmod m$.
+
+\section{Primer: Modular Inverses}
+
+The \textbf{modular inverse} of an integer $a$ modulo $m$ is the integer $a^{-1}$ such that:
+\[
+    a \cdot a^{-1} \equiv 1 \pmod{m}
+\]
+It exists if and only if $\gcd(a, m) = 1$. When it does, it can be computed efficiently in
+$O(\log m)$ using the \textbf{Extended Euclidean Algorithm}:
+
+\begin{verbatim}
+def mod_inverse(a, m):
+    g, x, _ = extended_gcd(a, m)
+    if g != 1:
+        raise ValueError("Inverse does not exist")
+    return x % m
+\end{verbatim}
+
+Modular inverses let us ``divide'' in modular arithmetic --- instead of computing $x / a \mod m$,
+we compute $x \cdot a^{-1} \mod m$.
+
+\section{Next and Forward Routines}
+
+We define two fundamental operations on an LCG state.
+
+\subsection*{Primitive: \texttt{next}}
+
+\texttt{next}$(x)$ applies one step of the recurrence:
+\[
+    \texttt{next}(x) = (a \cdot x + b) \mod m
+\]
+
+\subsection*{Naive \texttt{forward}}
+
+\texttt{forward}$(x, n)$ applies \texttt{next} $n$ times iteratively:
+
+\begin{verbatim}
+def forward(x, n):
+    for _ in range(n):
+        x = (a * x + b) % m
+    return x
+\end{verbatim}
+
+This runs in $O(n)$ time, which is impractical for large $n$.
+
+\subsection*{Closed Form}
+
+Unrolling the recurrence $n$ times gives:
+\[
+    \texttt{forward}(x, n)
+    = a\bigl(a(\ldots(a \cdot x + b)\ldots) + b\bigr) + b \mod m
+    = a^n x + b\sum_{i=0}^{n-1} a^i \mod m
+\]
+
+Applying the geometric series formula (for $a \neq 1$):
+\[
+    \texttt{forward}(x, n) = a^n\, x + b\!\left(\frac{a^n - 1}{a - 1}\right) \mod m
+\]
+
+This reduces the problem to computing $a^n \mod m$, which can be done in $O(\log n)$ via
+fast modular exponentiation.
+
+\subsection*{Efficient \texttt{forward} in $O(\log n)$}
+
+\begin{verbatim}
+def forward(x, n):
+    an = pow(a, n, m)                     # a^n mod m  in O(log n)
+    if a == 1:
+        return (x + b * n) % m
+    inv_a1 = mod_inverse(a - 1, m)        # (a-1)^{-1} mod m
+    return (an * x + b * (an - 1) * inv_a1) % m
+\end{verbatim}
+
+\noindent The modular inverse of $(a-1)$ exists whenever $\gcd(a-1,\, m) = 1$, which holds for
+typical LCG parameters.
+
+\section{Prev and Backward Routines}
+
+\subsection*{Primitive: \texttt{prev}}
+
+Just as \texttt{next} applies the recurrence forward, \texttt{prev}$(x)$ inverts it --- recovering
+the state that would have produced $x$. Starting from:
+\[
+    x = (a \cdot x_{\text{prev}} + b) \mod m
+\]
+we solve for $x_{\text{prev}}$:
+\[
+    x_{\text{prev}} = a^{-1}(x - b) \mod m
+\]
+where $a^{-1}$ is the modular inverse of $a$ modulo $m$ (which exists when $\gcd(a, m) = 1$).
+In code:
+
+\begin{verbatim}
+def prev(x):
+    inv_a = mod_inverse(a, m)
+    return (inv_a * (x - b)) % m
+\end{verbatim}
+
+\subsection*{\texttt{backward}}
+
+\texttt{backward}$(x, n)$ applies \texttt{prev} $n$ times, stepping the generator $n$ steps into
+the past. The naive implementation runs in $O(n)$:
+
+\begin{verbatim}
+def backward(x, n):
+    for _ in range(n):
+        x = prev(x)
+    return x
+\end{verbatim}
+
+\noindent Note that \texttt{backward}$(x, n)$ is equivalent to \texttt{forward}$(x, -n)$, so an
+efficient $O(\log n)$ version follows from the same closed form as before --- substituting $a^{-1}$
+and $-b \cdot a^{-1}$ as the new multiplier and increment respectively.
+
+\section{The Seed-Finding Problem}
+
+The general problem is to find an initial seed whose LCG outputs fall within prescribed intervals
+over several consecutive steps. For a concrete application of this framework to finding
+Minecraft world seeds with fully-filled stronghold portals, see Appendix~\ref{app:minecraft}.
+
+\subsection*{General Problem Formulation}
+
+More generally, the problem we study is:
+
+\begin{quote}
+    \textit{Given bounds $m_1, M_1, \ldots, m_k, M_k$ and an offset $n$, find an initial seed
+    $\text{seed}_0$ such that for each $i \in \{1, \ldots, k\}$:}
+    \[
+        m_i \;\leq\; \text{seed}_{n+i} \;\leq\; M_i
+    \]
+\end{quote}
+
+That is, we want $k$ consecutive outputs of the LCG, starting from step $n$, to each fall within
+a prescribed interval. The challenge is to search over the space of possible seeds $\text{seed}_0
+\in [0, m)$ efficiently --- brute force is infeasible when $m$ is large (e.g.\ $m = 2^{48}$ in
+Java's \texttt{Random}).
+
+\subsection*{Reducing to Constraints on $\text{seed}_0$}
+
+Using the closed form for \texttt{forward}, every constraint on $\text{seed}_{n+i}$ can be written
+directly in terms of $\text{seed}_0$. Crucially, the offset $n$ is handled for free: given any
+candidate $\text{seed}_n$, we can recover $\text{seed}_0 = \texttt{backward}(\text{seed}_n, n)$
+in $O(\log n)$, or equivalently jump ahead with $\texttt{forward}(\text{seed}_0, n)$. This means
+we can freely translate between constraints on $\text{seed}_0$ and constraints on any other step.
+
+Expressing $\text{seed}_{n+i} = \texttt{forward}(\text{seed}_0,\, n+i)$ via the closed form,
+the system of $k$ constraints becomes (shown here for $n = 0$, $k = 12$):
+
+\[
+\min_0 \;\leq\; \left\lfloor a^0\,\text{seed}_0 + b\!\left(\frac{a^0 - 1}{a-1}\right) \right\rfloor \bmod m \;\leq\; \max_0
+\]
+\[
+\min_1 \;\leq\; \left\lfloor a^1\,\text{seed}_0 + b\!\left(\frac{a^1 - 1}{a-1}\right) \right\rfloor \bmod m \;\leq\; \max_1
+\]
+\[
+\vdots
+\]
+\[
+\min_{11} \;\leq\; \left\lfloor a^{11}\,\text{seed}_0 + b\!\left(\frac{a^{11} - 1}{a-1}\right) \right\rfloor \bmod m \;\leq\; \max_{11}
+\]
+
+Each constraint is a modular interval condition on $\text{seed}_0$. The problem reduces to finding
+all $\text{seed}_0 \in [0, m)$ satisfying all $k$ such constraints simultaneously.
+
+\subsection*{Removing the Modulus}
+
+The modular reduction is the main obstacle to solving the system directly. We eliminate it by
+observing that $x \bmod m = x - km$ for some integer $k \geq 0$. That is, for each constraint $i$
+there exists an unknown integer $k_i$ such that:
+\[
+    a^i\,\text{seed}_0 + b\!\left(\frac{a^i-1}{a-1}\right) - k_i m
+\]
+is the true (non-reduced) value. Substituting this into the bounds and rearranging --- moving the
+$b(\cdots)$ term to both sides --- each modular inequality becomes an ordinary linear inequality:
+
+\[
+\min_0 - b\!\left(\frac{a^0-1}{a-1}\right) \;\leq\; a^0\,\text{seed}_0 + k_0\, m \;\leq\; \max_0 - b\!\left(\frac{a^0-1}{a-1}\right)
+\]
+\[
+\min_1 - b\!\left(\frac{a^1-1}{a-1}\right) \;\leq\; a^1\,\text{seed}_0 + k_1\, m \;\leq\; \max_1 - b\!\left(\frac{a^1-1}{a-1}\right)
+\]
+\[
+\vdots
+\]
+\[
+\min_{11} - b\!\left(\frac{a^{11}-1}{a-1}\right) \;\leq\; a^{11}\,\text{seed}_0 + k_{11}\, m \;\leq\; \max_{11} - b\!\left(\frac{a^{11}-1}{a-1}\right)
+\]
+
+The system now has $k+1$ unknowns ($\text{seed}_0$ and the integers $k_0, \ldots, k_{k-1}$) and
+$2k$ linear inequalities over the integers. No modular arithmetic remains --- the problem has
+been lifted to an integer linear feasibility problem.
+
+\subsection*{Matrix Formulation}
+
+We can write the system compactly by collecting the unknowns into a vector
+$\hat{x} = (\text{seed}_0,\, k_0,\, k_1,\, \ldots,\, k_{n-1})^\top$ and defining:
+
+\[
+A = \begin{bmatrix}
+1      & 0 & 0 & \cdots & 0 \\
+a^{\alpha_1} & m & 0 & \cdots & 0 \\
+a^{\alpha_2} & 0 & m & \cdots & 0 \\
+\vdots & \vdots & \vdots & \ddots & \vdots \\
+a^{\alpha_{n-1}} & 0 & 0 & \cdots & m
+\end{bmatrix},
+\qquad
+\hat{b} = \begin{bmatrix}
+0 \\
+b\!\left(\dfrac{a^{\alpha_1}-1}{a-1}\right) \\[6pt]
+b\!\left(\dfrac{a^{\alpha_2}-1}{a-1}\right) \\
+\vdots \\
+b\!\left(\dfrac{a^{\alpha_{n-1}}-1}{a-1}\right)
+\end{bmatrix},
+\]
+
+\[
+\widehat{\min} = \begin{bmatrix} \min_0 \\ \min_1 \\ \vdots \\ \min_{n-1} \end{bmatrix},
+\qquad
+\widehat{\max} = \begin{bmatrix} \max_0 \\ \max_1 \\ \vdots \\ \max_{n-1} \end{bmatrix}.
+\]
+
+The entire seed-finding problem then reduces to finding an integer vector $\hat{x}$ such that:
+\[
+    \widehat{\min} \;\leq\; A\hat{x} + \hat{b} \;\leq\; \widehat{\max}
+\]
+subject to $0 \leq x_1 = \text{seed}_0 < m$. Crucially, the possible values of
+$A\hat{x} + \hat{b} \bmod m$ are exactly the possible tuples of consecutive LCG seeds ---
+so any solution $\hat{x}$ directly yields a valid initial seed.
+
+\subsection*{Geometric Interpretation: A Lattice Problem}
+
+The columns of $A$ generate a \textbf{lattice} --- the set of all integer linear combinations
+$A\hat{x}$ for $\hat{x} \in \mathbb{Z}^n$. The constraint $\widehat{\min} \leq A\hat{x} + \hat{b} \leq \widehat{\max}$
+asks for lattice points that land inside the axis-aligned box
+$[\widehat{\min},\, \widehat{\max}]$ after the shift by $\hat{b}$.
+
+Equivalently, applying $A^{-1}$ to both sides transforms the axis-aligned box into a
+(potentially skewed) parallelogram in the space of integer vectors $\hat{x}$, and we seek
+all integer points inside that parallelogram. This is illustrated below:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{img/topics/2026/4/geom.png}
+    \caption{\textit{Left:} the lattice spanned by columns $a_0, a_1$ of $A$, with the target box (grey) and
+lattice points inside it (green). \textit{Right:} after applying $A^{-1}$, the lattice becomes
+$\mathbb{Z}^n$ and the box becomes a skewed parallelogram --- we now seek integer points inside it.}
+    \label{fig:placeholder}
+\end{figure}
+This reframing connects the seed-finding problem to classical problems in the geometry of numbers,
+and motivates the use of lattice reduction algorithms such as LLL to efficiently enumerate
+solutions.
+
+\section{Branch and Bound}
+
+Having reduced the problem to finding integer vectors $\hat{x}$ satisfying
+$\widehat{\min} \leq A\hat{x} + \hat{b} \leq \widehat{\max}$,
+we now describe how to enumerate all such solutions via \textbf{branch and bound}.
+
+\subsection*{The Linear Programme}
+
+Because $A$ is lower triangular, the system $\widehat{\min} \leq A\hat{x} + \hat{b} \leq \widehat{\max}$
+can be solved one variable at a time from the bottom row upward. Suppose components
+$x_{i+1}, \ldots, x_{n-1}$ have already been fixed. Row $i$ of the system reads:
+\[
+    \widehat{\min}_i \;\leq\; A_{ii}\, x_i + \underbrace{\sum_{j>i} A_{ij}\, x_j + \hat{b}_i}_{\text{known}} \;\leq\; \widehat{\max}_i
+\]
+Isolating $x_i$ gives the real interval:
+\[
+    l_i \;=\; \frac{\widehat{\min}_i - \hat{b}_i - \sum_{j>i} A_{ij}\,x_j}{A_{ii}}, \qquad
+    u_i \;=\; \frac{\widehat{\max}_i - \hat{b}_i - \sum_{j>i} A_{ij}\,x_j}{A_{ii}}
+\]
+Since $x_i$ must be an integer, the feasible values are
+$x_i \in \{\lceil l_i \rceil, \ldots, \lfloor u_i \rfloor\}$.
+If $\lceil l_i \rceil > \lfloor u_i \rfloor$, the partial assignment is infeasible and
+the branch is immediately pruned.
+
+\subsection*{The Subroutine}
+
+The algorithm recurses from the last variable to the first, branching over all integer values
+in the feasible interval at each level:
+
+\begin{verbatim}
+def branch_and_bound(A, b_hat, lo, hi, x, i):
+    """
+    A, b_hat : system matrix and offset
+    lo, hi   : vectors of bounds (min_hat, max_hat)
+    x        : partial solution (components i+1..n already fixed)
+    i        : current variable index (counting down from n-1 to 0)
+    """
+    if i < 0:
+        yield x[:]          # full solution found
+        return
+
+    # Compute the real interval for x[i] given fixed components
+    fixed = sum(A[i][j] * x[j] for j in range(i+1, len(x)))
+    l = (lo[i] - b_hat[i] - fixed) / A[i][i]
+    u = (hi[i] - b_hat[i] - fixed) / A[i][i]
+
+    lo_int, hi_int = ceil(l), floor(u)
+    if lo_int > hi_int:
+        return              # prune: no valid integer exists
+
+    for val in range(lo_int, hi_int + 1):
+        x[i] = val
+        yield from branch_and_bound(A, b_hat, lo, hi, x, i - 1)
+\end{verbatim}
+
+The outermost call is \texttt{branch\_and\_bound(A, b\_hat, min\_hat, max\_hat, x, n-1)}.
+Each leaf that reaches $i < 0$ yields a valid $\hat{x}$, from which $\text{seed}_0 = x_0$ is
+read off directly.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\linewidth]{img/topics/2026/4/bb.png}
+\end{figure}
+The worst-case complexity is exponential in the number of solutions, but pruning makes it
+efficient in practice when the feasible parallelogram is small --- which is precisely what LLL
+achieves by reducing the basis before running this search.
+
+% ══════════════════════════════════════════════════════════════════════════════
+% LLL PART — from index.tex
+% ══════════════════════════════════════════════════════════════════════════════
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Basis Choice and Lattice Reduction}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Different Bases, Same Lattice}
+
+A lattice $\mathcal{L}$ has infinitely many bases. If $B = (b_1, \ldots, b_n)$
+is one basis and $U$ is any unimodular matrix (integer matrix with $\det U = \pm 1$),
+then $BU$ is another valid basis generating the same lattice.
+
+\begin{keybox}
+\textbf{Observation.}
+Two bases for the same lattice can produce parallelograms of wildly different
+shapes. A skewed basis yields a thin, elongated parallelogram; an orthogonal
+basis yields a compact, box-like one.
+\end{keybox}
+
+\subsection{What Makes a Good Basis?}
+
+We want a basis $B = (b_1, \ldots, b_n)$ where:
+\begin{itemize}
+  \item The vectors $b_i$ are \emph{reasonably short} (no unnecessarily long directions),
+  \item The vectors are \emph{nearly orthogonal} (small off-diagonal
+        Gram--Schmidt coefficients),
+  \item The Gram--Schmidt lengths $\|b_i^*\|$ do not drop too rapidly
+        (avoiding highly skewed configurations).
+\end{itemize}
+
+Such a basis makes the corresponding parallelepiped well-shaped and
+better aligned with the coordinate axes, dramatically improving the
+performance of branch-and-bound methods.
+
+\begin{keybox}
+\textbf{Motivation for the next step.}
+Finding an \emph{optimal} basis (e.g.\ shortest or most orthogonal) is
+NP-hard in general. However, efficient approximation algorithms exist.
+The most celebrated is the \emph{LLL algorithm} (Lenstra--Lenstra--Lov\'{a}sz, 1982),
+which computes, in polynomial time, a basis that is nearly orthogonal and
+well-balanced. In particular, it guarantees that the first basis vector is
+within an exponential factor of the shortest nonzero lattice vector.
+\end{keybox}
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The LLL Algorithm}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{$\delta$-LLL Reduced Basis}
+
+Let $B = (b_1, \dots, b_n)$ be a basis of a lattice $\mathcal{L} \subset \R^m$.
+Let $b_1^*, \dots, b_n^*$ be its Gram--Schmidt orthogonalization:
+\[
+  b_i = b_i^* + \sum_{j<i} \mu_{i,j} b_j^*.
+\]
+
+\begin{definition}
+Let $\delta \in (1/4,1)$. The basis $B$ is called \emph{$\delta$-LLL reduced} if:
+\begin{enumerate}
+  \item For all $i > j$, $|\mu_{i,j}| \leq \tfrac{1}{2}$,
+  \item For all $i = 1, \dots, n-1$,
+  \[
+    \|b_{i+1}^*\|^2 \;\geq\; (\delta - \mu_{i+1,i}^2)\,\|b_i^*\|^2.
+  \]
+\end{enumerate}
+\end{definition}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\subsection{Bound on the Shortest Vector}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{theorem}
+If $B$ is a $\delta$-LLL reduced basis of $\mathcal{L}$, then
+\[
+  \|b_1\| \;\leq\; 2^{\frac{n-1}{2}} \cdot \lambda_1(\mathcal{L}),
+\]
+where $\lambda_1(\mathcal{L})$ is the length of the shortest nonzero lattice vector.
+\end{theorem}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\subsection{LLL Algorithm}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{algorithm}[H]
+\caption{\texttt{LLL(B, $\delta$)}}
+\begin{algorithmic}[1]
+    \State \textbf{Input:} $B \in \Z^{m \times n}$, $\delta \in (1/4,1)$
+    \State \textbf{Output:} A $\delta$-LLL reduced basis generating the same lattice
+    \State $B \gets \textsc{SizeReduce}(B)$
+    \If{ $\exists i$ such that $\|b_{i+1}^*\|^2 < (\delta - \mu_{i+1,i}^2)\,\|b_i^*\|^2$}
+        \State Swap $b_i, b_{i+1}$
+        \State \Return $\texttt{LLL}(B, \delta)$
+    \EndIf
+    \State \Return $B$
+\end{algorithmic}
+\end{algorithm}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\subsection{Size Reduction via Column Operations}
+% ══════════════════════════════════════════════════════════════════════════════
+
+Recall the Gram--Schmidt decomposition
+\[
+  B = B^* M,
+\]
+where $B^* = (b_1^*, \dots, b_n^*)$ has orthogonal columns and
+$M = (\mu_{i,j})$ is upper triangular with $\mu_{i,i} = 1$.
+
+Size reduction corresponds to modifying the columns of $B$ using
+\emph{integer column operations} so that
+\[
+  |\mu_{i,j}| \leq \tfrac{1}{2} \quad \text{for all } i > j.
+\]
+
+\medskip
+
+We proceed column by column. For $j = 1, \dots, n$, and for
+$i = j-1, j-2, \dots, 1$, perform the operation
+\[
+  b_j \;\leftarrow\; b_j - \lfloor \mu_{j,i} \rceil \, b_i,
+\]
+where $\lfloor \cdot \rceil$ denotes rounding to the nearest integer.
+
+\medskip
+
+This is an elementary column operation on $B$, and corresponds to updating
+the matrix $M$ by
+\[
+  \mu_{j,i} \;\leftarrow\; \mu_{j,i} - \lfloor \mu_{j,i} \rceil,
+\]
+which ensures
+\[
+  |\mu_{j,i}| \leq \tfrac{1}{2}.
+\]
+
+\begin{keybox}
+\textbf{Key point.}
+Size reduction is achieved purely by integer column operations on $B$,
+preserving the lattice, while ensuring all Gram--Schmidt coefficients
+satisfy $|\mu_{i,j}| \leq \tfrac{1}{2}$.
+\end{keybox}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\subsection{Existence of LLL-Reduced Basis}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{theorem}
+Let $B \in \Z^{m \times n}$ be an integer basis and let $\delta \in (1/4,1)$.
+Then there exists an integer basis $B'$ such that:
+\begin{enumerate}
+  \item $B'$ is $\delta$-LLL reduced,
+  \item $B'$ generates the same lattice as $B$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+We prove correctness and finiteness of the LLL algorithm.
+
+\medskip
+\noindent\textbf{(Correctness).}
+If the algorithm terminates, then no Lovász condition is violated, and the
+basis is size-reduced. Hence the output basis is $\delta$-LLL reduced.
+
+\medskip
+\noindent\textbf{(Lattice preservation).}
+All operations used are integer column operations:
+\begin{itemize}
+  \item size reduction replaces $b_j$ by $b_j - k b_i$,
+  \item swaps exchange two basis vectors.
+\end{itemize}
+Thus the output basis is obtained from the input by unimodular transformations,
+and therefore generates the same lattice.
+
+\medskip
+  \noindent\textbf{(Finiteness)}
+Define a potential
+\[
+  \Phi(B)
+  \;:=\;
+  \prod_{i=1}^n \det\!\big(\mathcal{L}(b_1,\dots,b_i)\big),
+\]
+where $\mathcal{L}(b_1,\dots,b_i)$ denotes the lattice generated by
+$b_1,\dots,b_i$.
+
+Equivalently, since
+\[
+  \det\!\big(\mathcal{L}(b_1,\dots,b_i)\big)
+  = \text{vol of the fundamental parallelepiped}
+  = \prod_{j=1}^i \|b_j^*\|,
+\]
+we may write
+\[
+  \Phi(B)
+  =
+  \prod_{i=1}^n \prod_{j=1}^i \|b_j^*\|.
+\]
+
+\medskip
+\noindent\emph{Effect of size reduction.}
+Size reduction does not change the Gram--Schmidt vectors $b_j^*$.
+Hence $\Phi(B)$ remains unchanged.
+
+\medskip
+\noindent\emph{Effect of swapping $b_i, b_{i+1}$.}
+All prefixes except the $i$-th remain unchanged, so only the factor
+\[
+  \det\!\big(\mathcal{L}(b_1,\dots,b_i)\big)
+\]
+changes.
+
+Let $\Phi'$ denote the potential after swapping $b_i$ and $b_{i+1}$.
+
+First observe how the Gram--Schmidt vectors change. Consider the prefix
+\[
+  (b_1, \dots, b_{i-1}, b_{i+1}).
+\]
+For this sequence, the Gram--Schmidt vectors are
+\[
+  b_1^*, \dots, b_{i-1}^*, \; b_{i+1}^{*\prime},
+\]
+where the first $i-1$ vectors remain unchanged, and
+\[
+  b_{i+1}^{*\prime}
+  =
+  b_{i+1} - \sum_{j=1}^{i-1} \mu_{i+1,j} b_j^*
+  =
+  b_{i+1}^* + \mu_{i+1,i} b_i^*.
+\]
+
+Thus,
+\[
+  \|b_{i+1}^{*\prime}\|^2
+  =
+  \|b_{i+1}^*\|^2 + \mu_{i+1,i}^2 \|b_i^*\|^2.
+\]
+
+Now, since only the $i$-th prefix changes in the potential, we have
+\[
+  \frac{\Phi'}{\Phi}
+  =
+  \frac{\det(\mathcal{L}(b_1,\dots,b_{i-1},b_{i+1}))}
+       {\det(\mathcal{L}(b_1,\dots,b_i))}
+  =
+  \frac{\|b_{i+1}^{*\prime}\|}{\|b_i^*\|}.
+\]
+
+If the Lovász condition is violated, then
+\[
+  \|b_{i+1}^*\|^2 < (\delta - \mu_{i+1,i}^2)\|b_i^*\|^2,
+\]
+and hence
+\[
+  \|b_{i+1}^{*\prime}\|^2
+  <
+  \delta \|b_i^*\|^2.
+\]
+
+Taking square roots,
+\[
+  \frac{\Phi'}{\Phi}
+  <
+  \sqrt{\delta}
+  <
+  1.
+\]
+
+\medskip
+\noindent\emph{Finiteness.}
+Observe that for each $i$,
+\[
+  \det\!\big(\mathcal{L}(b_1,\dots,b_i)\big)
+  =
+  \sqrt{\det(B_i^T B_i)},
+\]
+where $B_i$ is the matrix with columns $b_1,\dots,b_i$. Since $B_i$ has
+integer entries, $\det(B_i^T B_i)$ is an integer, and hence each factor in
+$\Phi(B)$ is a square root of a positive integer.
+
+Therefore, $\Phi(B)$ itself is a product of square roots of integers, and
+can take values only in a discrete subset of $\R_{>0}$. In particular,
+in the interval $(0, \Phi(B^{\text{in}})]$, it can assume only finitely
+many values.
+
+Since each swap strictly decreases $\Phi(B)$ by at least a constant factor
+$\sqrt{\delta} < 1$, the sequence of potentials is strictly decreasing and
+cannot be infinite.
+
+\medskip
+\noindent
+Therefore, the algorithm terminates.
+
+\medskip
+Combining the above, a $\delta$-LLL reduced basis $B'$ exists.
+\end{proof}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section*{References}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{itemize}
+  \item \textit{Minecraft 12-Eyed Seed Explanation (YouTube video)}\\
+        \url{https://www.youtube.com/watch?v=mc9w2iD3Gzs}
+
+  \item D.\ Micciancio, \textit{CSE206A: Lattice Algorithms and Applications
+        (Winter 2010)}\\
+        Lecture notes, UC San Diego\\
+        \url{https://cseweb.ucsd.edu/classes/wi10/cse206a/}
+
+  \item O.\ Regev, \textit{Lattices in Computer Science (Fall 2004)}\\
+        Lecture notes, Tel Aviv University\\
+        \url{https://cims.nyu.edu/~regev/teaching/lattices_fall_2004/}
+\end{itemize}
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\appendix
+\section{Appendix: Minecraft 12-Eyed Seed}
+\label{app:minecraft}
+% ══════════════════════════════════════════════════════════════════════════════
+
+In \emph{Minecraft}, an End Portal consists of 12 slots, each of which
+requires an \emph{Ender Eye} to be filled. When a world is generated,
+each slot may already be pre-filled.
+
+Internally, this is determined using calls to a pseudorandom generator
+(\texttt{Random::nextFloat()} in Java), which maps the internal seed to a
+value in $[0,1)$. A slot is filled if this value exceeds $0.9$.
+
+\medskip
+
+The Java random number generator is a linear congruential generator:
+\[
+  \text{seed}_{i+1}
+  \equiv
+  25214903917 \cdot \text{seed}_i + 11
+  \pmod{2^{48}}.
+\]
+
+\medskip
+
+In the world-generation pipeline, the first $760$ calls are irrelevant for
+the portal. Thus, we begin at $\text{seed}_{761}$ and require that the next
+$12$ calls all satisfy
+\[
+  \texttt{nextFloat()} > 0.9.
+\]
+
+This translates to the constraint
+\[
+  \text{seed}_i \in [253327472328704,\; 2^{48}-1],
+  \qquad i = 761, \dots, 772,
+\]
+since
+\[
+  0.9 \cdot 2^{48} = 253327472328704.
+\]
+
+\begin{keybox}
+\textbf{Connection to our problem.}
+This is an instance of the LCG constraint problem with:
+\begin{itemize}
+  \item modulus $m = 2^{48}$,
+  \item multiplier $a = 25214903917$, increment $b = 11$,
+  \item $n = 760$ unconstrained steps,
+  \item $k = 12$ constrained steps,
+  \item uniform bounds $m_i = 253327472328704$ and $M_i = 2^{48}-1$.
+\end{itemize}
+\end{keybox}
+
+Thus, finding a 12-eyed seed reduces to finding integer points satisfying
+linear constraints derived from an LCG --- precisely the type of problem
+we studied using lattice methods and the LLL algorithm.
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{img/topics/2026/4/image.png}
+\end{figure}
+
+\end{document}

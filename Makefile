@@ -50,7 +50,9 @@ LATEXMK  := latexmk -pdf -interaction=nonstopmode -halt-on-error -shell-escape
 # Format: <year>/<n>   (must match a directory under src/topics/)
 TOPICS := \
     2026/1 \
-    2026/2
+    2026/2 \
+    2026/4 \
+
 
 # ── Derived lists ──────────────────────────────────────────────────────────────
 TOPIC_HTML_STAMPS := $(foreach t,$(TOPICS),$(BUILDDIR)/topics/$(t)/html.stamp)
