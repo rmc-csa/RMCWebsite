@@ -93,7 +93,8 @@ $(MAIN_HTML_STAMP): $(SRCDIR)/index.tex $(wildcard $(SRCDIR)/img/*) $(IMG_STAMP)
 	@mkdir -p $(BUILDDIR)/main $(SITEDIR)
 	@# Copy source + common images into build scratch
 	@cp $(SRCDIR)/index.tex $(BUILDDIR)/main/
-	@ln -sfn $(abspath $(SITEDIR)/img) $(BUILDDIR)/main/img
+	@# Relative path from output/.build/main/ to output/site/img/
+	@ln -sfn ../../../output/site/img $(BUILDDIR)/main/img
 	@cd $(BUILDDIR)/main && \
 		$(MAKE4HT) -f html5 index.tex 2>&1 | tail -5
 	@# Install into site
@@ -127,8 +128,9 @@ $(BUILDDIR)/topics/%/html.stamp: \
 	@# Make img/ inside build dir point to the full img tree so LaTeX
 	@# can resolve both common (img/logo.png) and topic-specific paths
 	@# (img/topics/2026/1/foo.png) without changing the .tex source.
+	@# Relative path from output/.build/topics/<year>/<n>/ to output/site/img/
 	@rm -f $(BUILDDIR)/topics/$*/img
-	@ln -sfn $(abspath $(SITEDIR)/img) $(BUILDDIR)/topics/$*/img
+	@ln -sfn ../../../../../output/site/img $(BUILDDIR)/topics/$*/img
 	@cd $(BUILDDIR)/topics/$* && \
 		$(MAKE4HT) -f html5 index.tex 2>&1 | tail -5
 	@# Install HTML + CSS into site
@@ -137,8 +139,8 @@ $(BUILDDIR)/topics/%/html.stamp: \
 	@# Copy generated SVGs (make4ht extracts math/figures as SVGs)
 	@find $(BUILDDIR)/topics/$* -maxdepth 1 -name '*.svg' \
 		-exec cp {} $(SITEDIR)/topics/$*/ \;
-	@# Symlink img inside the site topic dir for HTML <img> tags
-	@ln -sfn $(abspath $(SITEDIR)/img) $(SITEDIR)/topics/$*/img
+	@# Relative path from output/site/topics/<year>/<n>/ to output/site/img/
+	@ln -sfn ../../../img $(SITEDIR)/topics/$*/img
 	$(call PATCH_HTML,$(SITEDIR)/topics/$*)
 	@touch $@
 
@@ -152,7 +154,8 @@ $(BUILDDIR)/topics/%/pdf.stamp: \
 	@mkdir -p $(BUILDDIR)/topics/$* $(SITEDIR)/topics/$*
 	@cp $(SRCDIR)/topics/$*/index.tex $(BUILDDIR)/topics/$*/
 	@rm -f $(BUILDDIR)/topics/$*/img
-	@ln -sfn $(abspath $(SITEDIR)/img) $(BUILDDIR)/topics/$*/img
+	@# Relative path from output/.build/topics/<year>/<n>/ to output/site/img/
+	@ln -sfn ../../../../../output/site/img $(BUILDDIR)/topics/$*/img
 	@cd $(BUILDDIR)/topics/$* && \
 		$(LATEXMK) index.tex 2>&1 | tail -5
 	@cp $(BUILDDIR)/topics/$*/index.pdf $(SITEDIR)/topics/$*/
