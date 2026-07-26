@@ -63,10 +63,8 @@ MAIN_PDF_STAMP    := $(BUILDDIR)/main/pdf.stamp
 
 # ── Patch helper: suppress dark-mode image inversion ──────────────────────────
 define PATCH_HTML
-	find $1 -name "index.html" -exec perl -i -pe \
-		's|</head>|<style>\
-\@media (prefers-color-scheme:dark){img{filter:none!important}}\
-</style></head>|i unless /max-width:min\(80vw,1100px\)/' {} \;
+	find $1 -name "index.html" \
+		-exec python3 patch_head.py {} headers.html \;
 endef
 
 # ── Default target ─────────────────────────────────────────────────────────────
